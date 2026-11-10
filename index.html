@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Life">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<title>Commander Life</title>
+<style>
+  :root { --gap: 5px; --radius: 16px; --ink: #141414; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body {
+    position: fixed; inset: 0;
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    touch-action: manipulation;
+  }
+  button { font: inherit; color: inherit; }
+
+  #board {
+    position: absolute;
+    top: env(safe-area-inset-top); bottom: env(safe-area-inset-bottom);
+    left: env(safe-area-inset-left); right: env(safe-area-inset-right);
+  }
+
+  /* ---------- player panels ---------- */
+  .panel { position: absolute; border-radius: var(--radius); overflow: hidden; transition: filter .25s; }
+  .panel.dead { filter: saturate(.25) brightness(.7); }
+  .panel.pick { animation: pick .18s ease-out; }
+  .panel.chosen { box-shadow: inset 0 0 0 6px #fff; }
+  @keyframes pick { from { filter: brightness(1.6); } to { filter: none; } }
+
+  .inner { position: absolute; left: 50%; top: 50%; }
+  .shade { position: absolute; inset: 0; background: rgba(0,0,0,.72); opacity: 0; transition: opacity .15s; pointer-events: none; }
+  .panel.alt .shade { opacity: 1; }
+
+  .zone { position: absolute; top: 0; bottom: 0; width: 50%; touch-action: none; }
+  .zone.minus { left: 0; } .zone.plus { right: 0; }
+  .zone.pressed { background: rgba(0,0,0,.08); }
+  .panel.alt .zone.pressed { background: rgba(255,255,255,.08); }
+
+  .glyph {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-size: calc(var(--big) * .34); font-weight: 300; opacity: .35; pointer-events: none;
+  }
+  .glyph.minus { left: 9%; } .glyph.plus { right: 9%; }
+  .panel.alt .glyph { color: #fff; }
+
+  .center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; pointer-events: none;
+  }
+  .label { font-size: calc(var(--big) * .16); font-weight: 700; min-height: 1.25em; white-space: nowrap; }
+  .num {
+    font-size: var(--big); font-weight: 600; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -.03em;
+  }
+  .sub { font-size: calc(var(--big) * .15); font-weight: 600; min-height: 1.25em; color: rgba(255,255,255,.75); }
+
+  .delta {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(calc(var(--big) * .95), calc(var(--big) * -.55));
+    font-size: calc(var(--big) * .2); font-weight: 700; pointer-events: none;
+    opacity: 0; transition: opacity .3s;
+  }
+  .delta.show { opacity: .8; }
+  .panel.alt .delta { color: #fff; }
+
+  .foot {
+    position: absolute; left: 14px; right: 14px; bottom: 10px;
+    display: flex; justify-content: space-between; align-items: center; pointer-events: none;
+  }
+  .name { font-weight: 700; font-size: 14px; opacity: .55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+  .panel.alt .name { color: #fff; }
+  .poison {
+    pointer-events: auto; border: 0; border-radius: 99px; padding: 5px 11px;
+    background: rgba(0,0,0,.16); font-weight: 700; font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  .poison.active { background: #000; color: #7fe07f; }
+  .poison.hidden { display: none; }
+
+  /* ---------- commander damage badges ---------- */
+  #badges { position: absolute; inset: 0; pointer-events: none; }
+  .badge {
+    position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px;
+    border-radius: 50%; border: 2px solid transparent;
+    background: rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums;
+    pointer-events: auto; padding: 0;
+  }
+  .badge::before { content: ""; position: absolute; inset: -9px; }
+  .badge.active { background: #000; border-color: currentColor; }
+  .badge.lethal { background: #b00000; color: #fff !important; }
+  .badge.hidden { display: none; }
+
+  #menuBtn {
+    position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px;
+    border-radius: 50%; border: 3px solid #000; background: #1c1c1e; color: #fff;
+    font-size: 22px; line-height: 1; display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+
+  /* ---------- settings sheet ---------- */
+  #sheet {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none;
+    align-items: flex-end; justify-content: center; z-index: 10;
+  }
+  #sheet.open { display: flex; }
+  .card {
+    width: 100%; max-width: 480px; max-height: 92%; overflow-y: auto;
+    background: #1c1c1e; color: #f2f2f7; border-radius: 20px 20px 0 0;
+    padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+    -webkit-user-select: auto; user-select: auto;
+  }
+  .card h2 { margin: 0 0 12px; font-size: 20px; display: flex; justify-content: space-between; align-items: center; }
+  .card h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #8e8e93; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .seg { display: flex; background: #2c2c2e; border-radius: 10px; padding: 3px; gap: 3px; }
+  .seg button { border: 0; background: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; }
+  .seg button.on { background: #636366; }
+  input[type=number], input[type=text] {
+    background: #2c2c2e; border: 0; border-radius: 10px; color: #fff;
+    padding: 9px 12px; font-size: 16px; width: 90px;
+  }
+  input[type=text] { width: 100%; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; gap: 10px; }
+  .toggle input[type=checkbox] { width: 22px; height: 22px; }
+  .pl { display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 12px; }
+  .swatches { display: flex; gap: 7px; flex-wrap: wrap; }
+  .sw { width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; padding: 0; }
+  .sw.on { border-color: #fff; }
+  .actions { display: flex; gap: 8px; margin-top: 20px; }
+  .actions button { flex: 1; border: 0; border-radius: 12px; padding: 13px; font-weight: 700; background: #2c2c2e; }
+  .actions .danger { background: #ff453a; color: #fff; }
+  .hint { font-size: 13px; color: #8e8e93; margin-top: 6px; }
+  .x { border: 0; background: #2c2c2e; border-radius: 50%; width: 32px; height: 32px; padding: 0; }
+</style>
+</head>
+<body>
+<div id="board">
+  <div id="badges"></div>
+  <button id="menuBtn" aria-label="Settings">⚙︎</button>
+</div>
+
+<div id="sheet">
+  <div class="card">
+    <h2>Settings <button class="x" id="closeBtn" aria-label="Close">✕</button></h2>
+
+    <h3>Players</h3>
+    <div class="seg" id="countSeg">
+      <button data-n="2">2</button><button data-n="3">3</button><button data-n="4">4</button>
+    </div>
+
+    <h3>Starting life</h3>
+    <div class="row">
+      <div class="seg" id="lifeSeg">
+        <button data-l="20">20</button><button data-l="30">30</button><button data-l="40">40</button>
+      </div>
+      <input type="number" id="lifeInput" inputmode="numeric" min="1" max="999">
+    </div>
+    <div class="hint" id="lifeHint"></div>
+
+    <h3>Counters</h3>
+    <label class="toggle"><span>Commander damage</span><input type="checkbox" id="cmdOn"></label>
+    <label class="toggle"><span>Commander damage lethal at</span><input type="number" id="cmdLimit" inputmode="numeric" min="1" max="99"></label>
+    <label class="toggle"><span>Poison counters</span><input type="checkbox" id="poisonOn"></label>
+    <label class="toggle"><span>Poison lethal at</span><input type="number" id="poisonLimit" inputmode="numeric" min="1" max="99"></label>
+
+    <h3>Names &amp; colors</h3>
+    <div id="playerEdit"></div>
+
+    <div class="actions">
+      <button id="firstBtn">🎲 Who goes first</button>
+      <button id="resetBtn" class="danger">Reset game</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const COLORS = ['#fdeba6', '#ff5c5c', '#9dd443', '#2bcdfd', '#bba2ff', '#ffb05c', '#ff9ad5', '#d2d2d2'];
+
+  // Panel rectangles as fractions of the board, plus the rotation that makes
+  // each panel face its player. 90 = player sits on the left side of the phone,
+  // -90 = right side, 180 = top end, 0 = bottom end.
+  // Players are listed clockwise around the table.
+  const LAYOUTS = {
+    2: [
+      { x: 0,  y: 0,  w: 1,  h: .5, r: 180 },
+      { x: 0,  y: .5, w: 1,  h: .5, r: 0 },
+    ],
+    3: [
+      { x: 0,  y: 0,  w: 1,  h: .5, r: 180 },
+      { x: .5, y: .5, w: .5, h: .5, r: -90 },
+      { x: 0,  y: .5, w: .5, h: .5, r: 90 },
+    ],
+    4: [
+      { x: 0,  y: 0,  w: .5, h: .5, r: 90 },
+      { x: .5, y: 0,  w: .5, h: .5, r: -90 },
+      { x: .5, y: .5, w: .5, h: .5, r: -90 },
+      { x: 0,  y: .5, w: .5, h: .5, r: 90 },
+    ],
+  };
+
+  const KEY = 'mtg-life-v1';
+  const defaults = () => ({
+    settings: { count: 4, startLife: 40, cmdOn: true, cmdLimit: 21, poisonOn: true, poisonLimit: 10 },
+    players: [0, 1, 2, 3].map(i => ({ name: 'Player ' + (i + 1), color: COLORS[i] })),
+    game: null,
+  });
+
+  let S;
+  try { S = JSON.parse(localStorage.getItem(KEY)) || defaults(); } catch { S = defaults(); }
+  S = Object.assign(defaults(), S);
+  S.settings = Object.assign(defaults().settings, S.settings);
+
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
+
+  function newGame() {
+    const n = S.settings.count;
+    S.game = {
+      n,
+      life: Array(n).fill(S.settings.startLife),
+      poison: Array(n).fill(0),
+      cmd: Array.from({ length: n }, () => Array(n).fill(0)), // cmd[victim][source]
+    };
+    modes = Array(n).fill(null).map(() => ({ type: 'life' }));
+    save();
+  }
+  const isDirty = () => {
+    const g = S.game;
+    return g.life.some(l => l !== S.settings.startLife) || g.poison.some(p => p > 0) || g.cmd.some(r => r.some(c => c > 0));
+  };
+
+  let modes = [];
+  if (!S.game || S.game.n !== S.settings.count) newGame();
+  modes = Array(S.game.n).fill(null).map(() => ({ type: 'life' }));
+
+  const board = document.getElementById('board');
+  const badgesEl = document.getElementById('badges');
+  const menuBtn = document.getElementById('menuBtn');
+  let panels = [], badges = {};
+  const modeTimers = [], deltas = [];
+
+  // ---------- building ----------
+  function build() {
+    panels.forEach(p => p.el.remove());
+    badgesEl.innerHTML = '';
+    panels = []; badges = {};
+    const n = S.game.n;
+
+    for (let i = 0; i < n; i++) {
+      const el = document.createElement('div');
+      el.className = 'panel';
+      el.innerHTML = `
+        <div class="inner">
+          <div class="shade"></div>
+          <div class="zone minus"></div><div class="zone plus"></div>
+          <div class="glyph minus">−</div><div class="glyph plus">+</div>
+          <div class="center"><div class="label"></div><div class="num"></div><div class="sub"></div></div>
+          <div class="delta"></div>
+          <div class="foot"><span class="name"></span><button class="poison"></button></div>
+        </div>`;
+      board.insertBefore(el, badgesEl);
+      const q = s => el.querySelector(s);
+      const p = {
+        el, inner: q('.inner'), label: q('.label'), num: q('.num'), sub: q('.sub'),
+        delta: q('.delta'), name: q('.name'), poison: q('.poison'),
+      };
+      bindZone(q('.zone.minus'), i, -1);
+      bindZone(q('.zone.plus'), i, +1);
+      p.poison.addEventListener('click', e => { e.stopPropagation(); toggleMode(i, { type: 'poison' }); });
+      panels.push(p);
+
+      for (let j = 0; j < n; j++) {
+        if (j === i) continue;
+        const b = document.createElement('button');
+        b.className = 'badge';
+        b.addEventListener('click', e => { e.stopPropagation(); toggleMode(i, { type: 'cmd', src: j }); });
+        badgesEl.appendChild(b);
+        badges[i + '-' + j] = b;
+      }
+    }
+    layout();
+    render();
+  }
+
+  // ---------- layout ----------
+  // Where on panel i's border should opponent j's commander-damage badge go?
+  // Shared edge -> middle of the shared stretch of that edge.
+  // Touching only at a corner (diagonal) -> that corner.
+  function badgePos(R, O, W, H) {
+    const E = 1, EDGE = 25, CORNER = 34;
+    const r = { l: R.x * W, t: R.y * H, r: (R.x + R.w) * W, b: (R.y + R.h) * H };
+    const o = { l: O.x * W, t: O.y * H, r: (O.x + O.w) * W, b: (O.y + O.h) * H };
+    const yOver = [Math.max(r.t, o.t), Math.min(r.b, o.b)];
+    const xOver = [Math.max(r.l, o.l), Math.min(r.r, o.r)];
+    if (yOver[1] - yOver[0] > E) {
+      if (Math.abs(r.r - o.l) < E) return { x: r.r - EDGE, y: (yOver[0] + yOver[1]) / 2, ax: 'y' };
+      if (Math.abs(r.l - o.r) < E) return { x: r.l + EDGE, y: (yOver[0] + yOver[1]) / 2, ax: 'y' };
+    }
+    if (xOver[1] - xOver[0] > E) {
+      if (Math.abs(r.b - o.t) < E) return { x: (xOver[0] + xOver[1]) / 2, y: r.b - EDGE, ax: 'x' };
+      if (Math.abs(r.t - o.b) < E) return { x: (xOver[0] + xOver[1]) / 2, y: r.t + EDGE, ax: 'x' };
+    }
+    // diagonal / not touching: nearest corner of R toward O
+    const ocx = (o.l + o.r) / 2, ocy = (o.t + o.b) / 2;
+    const right = ocx > (r.l + r.r) / 2, down = ocy > (r.t + r.b) / 2;
+    return { x: right ? r.r - CORNER : r.l + CORNER, y: down ? r.b - CORNER : r.t + CORNER, ax: null };
+  }
+
+  function layout() {
+    const W = board.clientWidth, H = board.clientHeight, g = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 5;
+    const L = LAYOUTS[S.game.n];
+    const mx = W / 2, my = H / 2;
+    menuBtn.style.left = mx + 'px'; menuBtn.style.top = my + 'px';
+
+    L.forEach((c, i) => {
+      const p = panels[i];
+      const pw = c.w * W - g, ph = c.h * H - g;
+      Object.assign(p.el.style, {
+        left: c.x * W + g / 2 + 'px', top: c.y * H + g / 2 + 'px', width: pw + 'px', height: ph + 'px',
+      });
+      const side = Math.abs(c.r) === 90;
+      const iw = side ? ph : pw, ih = side ? pw : ph;
+      Object.assign(p.inner.style, {
+        width: iw + 'px', height: ih + 'px',
+        transform: `translate(-50%,-50%) rotate(${c.r}deg)`,
+      });
+      p.el.style.setProperty('--big', Math.min(ih * .46, iw * .32) + 'px');
+
+      L.forEach((o, j) => {
+        if (j === i) return;
+        const pos = badgePos(c, o, W, H);
+        // keep badges clear of the centre settings button (matters for 2 players)
+        if (Math.hypot(pos.x - mx, pos.y - my) < 52) {
+          const rad = c.r * Math.PI / 180;
+          const readerRight = { x: Math.cos(rad), y: Math.sin(rad) };
+          if (pos.ax === 'x') pos.x += 64 * (Math.sign(readerRight.x) || 1);
+          else if (pos.ax === 'y') pos.y += 64 * (Math.sign(readerRight.y) || 1);
+        }
+        const b = badges[i + '-' + j];
+        b.style.left = pos.x + 'px'; b.style.top = pos.y + 'px';
+        b.style.transform = `rotate(${c.r}deg)`;
+      });
+    });
+  }
+
+  // ---------- rendering ----------
+  const lethalCmd = (i) => S.settings.cmdOn && S.game.cmd[i].some(c => c >= S.settings.cmdLimit);
+  const isDead = (i) => S.game.life[i] <= 0 || (S.settings.poisonOn && S.game.poison[i] >= S.settings.poisonLimit) || lethalCmd(i);
+
+  function render() {
+    const g = S.game, st = S.settings;
+    panels.forEach((p, i) => {
+      const pl = S.players[i], m = modes[i];
+      p.el.style.background = pl.color;
+      p.name.textContent = (isDead(i) ? '☠ ' : '') + pl.name;
+      p.el.classList.toggle('dead', isDead(i));
+      p.el.classList.toggle('alt', m.type !== 'life');
+
+      p.poison.classList.toggle('hidden', !st.poisonOn);
+      p.poison.classList.toggle('active', m.type === 'poison');
+      p.poison.textContent = '☣ ' + g.poison[i];
+
+      if (m.type === 'cmd') {
+        const src = S.players[m.src];
+        p.label.textContent = '⚔ from ' + src.name;
+        p.label.style.color = src.color;
+        p.num.textContent = g.cmd[i][m.src];
+        p.num.style.color = src.color;
+        p.sub.textContent = '♥ ' + g.life[i];
+      } else if (m.type === 'poison') {
+        p.label.textContent = '☣ Poison';
+        p.label.style.color = '#7fe07f';
+        p.num.textContent = g.poison[i];
+        p.num.style.color = '#7fe07f';
+        p.sub.textContent = 'lethal at ' + st.poisonLimit;
+      } else {
+        p.label.textContent = '';
+        p.num.textContent = g.life[i];
+        p.num.style.color = '';
+        p.sub.textContent = '';
+      }
+
+      for (let j = 0; j < g.n; j++) {
+        if (j === i) continue;
+        const b = badges[i + '-' + j];
+        b.classList.toggle('hidden', !st.cmdOn);
+        b.textContent = g.cmd[i][j];
+        b.style.color = S.players[j].color;
+        b.classList.toggle('active', m.type === 'cmd' && m.src === j);
+        b.classList.toggle('lethal', g.cmd[i][j] >= st.cmdLimit);
+      }
+    });
+  }
+
+  // ---------- interaction ----------
+  function setMode(i, m) {
+    modes[i] = m;
+    clearTimeout(modeTimers[i]);
+    if (m.type !== 'life') modeTimers[i] = setTimeout(() => { modes[i] = { type: 'life' }; render(); }, 7000);
+    showDelta(i, 0, true);
+    render();
+  }
+  function toggleMode(i, m) {
+    const cur = modes[i];
+    const same = cur.type === m.type && cur.src === m.src;
+    setMode(i, same ? { type: 'life' } : m);
+  }
+
+  function apply(i, d) {
+    const g = S.game, m = modes[i];
+    let shown = 0;
+    if (m.type === 'cmd') {
+      const before = g.cmd[i][m.src];
+      const after = Math.max(0, before + d);
+      const actual = after - before;
+      g.cmd[i][m.src] = after;
+      g.life[i] -= actual;               // commander damage is also life loss
+      shown = actual;
+    } else if (m.type === 'poison') {
+      const before = g.poison[i];
+      g.poison[i] = Math.max(0, before + d);
+      shown = g.poison[i] - before;
+    } else {
+      g.life[i] += d;
+      shown = d;
+    }
+    if (m.type !== 'life') setModeTimer(i);
+    showDelta(i, shown);
+    save();
+    render();
+  }
+  function setModeTimer(i) {
+    clearTimeout(modeTimers[i]);
+    modeTimers[i] = setTimeout(() => { modes[i] = { type: 'life' }; render(); }, 7000);
+  }
+
+  function showDelta(i, d, reset) {
+    const p = panels[i];
+    const st = deltas[i] || (deltas[i] = { v: 0, t: 0 });
+    clearTimeout(st.t);
+    if (reset) { st.v = 0; p.delta.classList.remove('show'); return; }
+    st.v += d;
+    p.delta.textContent = st.v > 0 ? '+' + st.v : st.v === 0 ? '±0' : '−' + Math.abs(st.v);
+    p.delta.classList.add('show');
+    st.t = setTimeout(() => { st.v = 0; p.delta.classList.remove('show'); }, 1800);
+  }
+
+  // tap = ±1, hold = ±10 repeating
+  function bindZone(z, i, sign) {
+    let hold = null, rep = null, held = false;
+    const stop = () => { clearTimeout(hold); clearInterval(rep); z.classList.remove('pressed'); };
+    z.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      keepAwake();
+      try { z.setPointerCapture(e.pointerId); } catch {}
+      held = false; z.classList.add('pressed');
+      hold = setTimeout(() => {
+        held = true; apply(i, sign * 10);
+        rep = setInterval(() => apply(i, sign * 10), 550);
+      }, 450);
+    });
+    z.addEventListener('pointerup', () => { stop(); if (!held) apply(i, sign); });
+    z.addEventListener('pointercancel', stop);
+  }
+
+  // ---------- who goes first ----------
+  function pickFirst() {
+    closeSheet();
+    const n = S.game.n, target = Math.floor(Math.random() * n);
+    const steps = n * 3 + target;
+    panels.forEach(p => p.el.classList.remove('chosen'));
+    let k = 0;
+    const tick = () => {
+      const idx = k % n;
+      panels.forEach((p, j) => p.el.classList.toggle('chosen', j === idx));
+      if (k >= steps) { setTimeout(() => panels[idx].el.classList.remove('chosen'), 2500); return; }
+      k++;
+      setTimeout(tick, 60 + k * 12);
+    };
+    tick();
+  }
+
+  // ---------- settings sheet ----------
+  const sheet = document.getElementById('sheet');
+  const $ = id => document.getElementById(id);
+
+  function openSheet() { fillSheet(); sheet.classList.add('open'); }
+  function closeSheet() { sheet.classList.remove('open'); }
+
+  function fillSheet() {
+    const st = S.settings;
+    $('countSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.n === st.count));
+    $('lifeSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.l === st.startLife));
+    $('lifeInput').value = st.startLife;
+    $('cmdOn').checked = st.cmdOn; $('cmdLimit').value = st.cmdLimit;
+    $('poisonOn').checked = st.poisonOn; $('poisonLimit').value = st.poisonLimit;
+    const pe = $('playerEdit');
+    pe.innerHTML = '';
+    for (let i = 0; i < st.count; i++) {
+      const pl = S.players[i];
+      const wrap = document.createElement('div');
+      wrap.className = 'pl';
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.value = pl.name; inp.maxLength = 16;
+      inp.addEventListener('input', () => { pl.name = inp.value || 'Player ' + (i + 1); save(); render(); });
+      const sw = document.createElement('div');
+      sw.className = 'swatches';
+      COLORS.forEach(c => {
+        const b = document.createElement('button');
+        b.className = 'sw' + (c === pl.color ? ' on' : '');
+        b.style.background = c;
+        b.addEventListener('click', () => { pl.color = c; save(); render(); fillSheet(); });
+        sw.appendChild(b);
+      });
+      wrap.append(inp, sw);
+      pe.appendChild(wrap);
+    }
+  }
+
+  function setStartLife(v) {
+    v = Math.max(1, Math.min(999, Math.round(v) || 40));
+    const wasClean = !isDirty();
+    S.settings.startLife = v;
+    if (wasClean) { newGame(); render(); $('lifeHint').textContent = ''; }
+    else $('lifeHint').textContent = 'Takes effect when you reset the game.';
+    save(); fillSheet();
+  }
+
+  $('countSeg').addEventListener('click', e => {
+    const n = +e.target.dataset.n;
+    if (!n || n === S.settings.count) return;
+    if (isDirty() && !confirm('Changing the player count resets the game. Continue?')) return;
+    S.settings.count = n;
+    newGame(); build(); fillSheet();
+  });
+  $('lifeSeg').addEventListener('click', e => { if (e.target.dataset.l) setStartLife(+e.target.dataset.l); });
+  $('lifeInput').addEventListener('change', e => setStartLife(+e.target.value));
+  $('cmdOn').addEventListener('change', e => { S.settings.cmdOn = e.target.checked; save(); render(); });
+  $('poisonOn').addEventListener('change', e => {
+    S.settings.poisonOn = e.target.checked;
+    if (!e.target.checked) modes = modes.map(m => m.type === 'poison' ? { type: 'life' } : m);
+    save(); render();
+  });
+  $('cmdLimit').addEventListener('change', e => { S.settings.cmdLimit = Math.max(1, +e.target.value || 21); save(); render(); fillSheet(); });
+  $('poisonLimit').addEventListener('change', e => { S.settings.poisonLimit = Math.max(1, +e.target.value || 10); save(); render(); fillSheet(); });
+  $('resetBtn').addEventListener('click', () => {
+    if (!confirm('Reset all life totals and counters?')) return;
+    newGame(); $('lifeHint').textContent = ''; render(); closeSheet();
+  });
+  $('firstBtn').addEventListener('click', pickFirst);
+  $('closeBtn').addEventListener('click', closeSheet);
+  sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
+  menuBtn.addEventListener('click', openSheet);
+
+  // ---------- platform bits ----------
+  let wakeLock = null;
+  async function keepAwake() {
+    try {
+      if ('wakeLock' in navigator && !wakeLock && document.visibilityState === 'visible') {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      }
+    } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+  document.addEventListener('gesturestart', e => e.preventDefault()); // block pinch-zoom on iOS
+  window.addEventListener('resize', layout);
+  window.addEventListener('orientationchange', () => setTimeout(layout, 300));
+
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
+  build();
+})();
+</script>
+</body>
+</html>

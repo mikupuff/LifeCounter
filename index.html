@@ -32,7 +32,18 @@
   }
 
   /* ---------- player panels ---------- */
-  .panel { position: absolute; border-radius: var(--radius); overflow: hidden; transition: filter .25s; }
+  .panel {
+    position: absolute; border-radius: var(--radius); overflow: hidden; transition: filter .25s;
+    background-size: cover; background-position: center; color: var(--ink);
+  }
+  .panel.dark { --ink: #f2f2f2; }
+  .panel.multi .num, .panel.multi .label, .panel.multi .glyph, .panel.multi .name {
+    text-shadow: 0 0 calc(var(--big) * .06) var(--halo), 0 0 2px var(--halo);
+  }
+  /* blends always mix light and dark areas, so use white text with a dark halo */
+  .panel.multi { --ink: #fff; --halo: rgba(0,0,0,.85); }
+  .panel.multi .poison:not(.active) { background: rgba(0,0,0,.45); }
+  .panel.alt .num, .panel.alt .label { text-shadow: none; }
   .panel.dead { filter: saturate(.25) brightness(.7); }
   .panel.pick { animation: pick .18s ease-out; }
   .panel.chosen { box-shadow: inset 0 0 0 6px #fff; }
@@ -45,6 +56,7 @@
   .zone { position: absolute; top: 0; bottom: 0; width: 50%; touch-action: none; }
   .zone.minus { left: 0; } .zone.plus { right: 0; }
   .zone.pressed { background: rgba(0,0,0,.08); }
+  .panel.dark .zone.pressed { background: rgba(255,255,255,.08); }
   .panel.alt .zone.pressed { background: rgba(255,255,255,.08); }
 
   .glyph {
@@ -78,14 +90,22 @@
     position: absolute; left: 14px; right: 14px; bottom: 10px;
     display: flex; justify-content: space-between; align-items: center; pointer-events: none;
   }
-  .name { font-weight: 700; font-size: 14px; opacity: .55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+  .who { display: flex; align-items: center; gap: 7px; max-width: 65%; min-width: 0; }
+  .name { font-weight: 700; font-size: 14px; opacity: .55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .pips { display: flex; gap: 3px; flex: none; }
+  .pip {
+    width: 19px; height: 19px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 1.5px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.35);
+  }
+  .pip svg { width: 13px; height: 13px; }
   .panel.alt .name { color: #fff; }
   .poison {
     pointer-events: auto; border: 0; border-radius: 99px; padding: 5px 11px;
     background: rgba(0,0,0,.16); font-weight: 700; font-size: 14px;
     font-variant-numeric: tabular-nums;
   }
-  .poison.active { background: #000; color: #7fe07f; }
+  .panel.dark .poison { background: rgba(255,255,255,.16); }
+  .poison.active, .panel.dark .poison.active { background: #000; color: #7fe07f; }
   .poison.hidden { display: none; }
 
   /* ---------- commander damage badges ---------- */
@@ -110,6 +130,53 @@
   }
 
   /* ---------- settings sheet ---------- */
+  /* ---------- win screen ---------- */
+  #win {
+    position: fixed; inset: 0; z-index: 20; display: none; overflow: hidden;
+    align-items: center; justify-content: center; background-size: cover; background-position: center;
+  }
+  #win.open { display: flex; animation: winIn .5s ease-out; }
+  #win::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(0,0,0,.25), rgba(0,0,0,.78) 75%);
+  }
+  @keyframes winIn { from { opacity: 0; } to { opacity: 1; } }
+  .win-card {
+    position: relative; width: min(78vmin, 420px); text-align: center; color: #fff;
+    text-shadow: 0 2px 12px rgba(0,0,0,.7);
+  }
+  #win.open .win-card { animation: winPop .7s cubic-bezier(.2, 1.4, .4, 1) both .1s; }
+  @keyframes winPop { from { opacity: 0; scale: .6; } to { opacity: 1; scale: 1; } }
+  .win-crown { font-size: 54px; line-height: 1; animation: bob 2.4s ease-in-out infinite; }
+  @keyframes bob { 50% { translate: 0 -8px; } }
+  .win-pips { display: flex; gap: 8px; justify-content: center; margin: 10px 0 6px; }
+  .win-pips .pip { width: 34px; height: 34px; box-shadow: 0 0 0 2px rgba(255,255,255,.7), 0 3px 10px rgba(0,0,0,.5); }
+  .win-pips .pip svg { width: 23px; height: 23px; }
+  .win-name {
+    font-size: clamp(30px, 11vmin, 64px); font-weight: 800; letter-spacing: -.02em; line-height: 1.05;
+    overflow-wrap: anywhere;
+  }
+  .win-sub { font-size: clamp(18px, 6vmin, 30px); font-weight: 700; letter-spacing: .2em; text-transform: uppercase; opacity: .9; }
+  .win-stats { margin-top: 10px; font-size: 15px; font-weight: 600; opacity: .85; }
+  .win-actions { display: flex; gap: 10px; margin-top: 22px; }
+  .win-actions button {
+    flex: 1; border: 0; border-radius: 14px; padding: 14px 10px; font-weight: 800; font-size: 16px; text-shadow: none;
+    background: rgba(255,255,255,.18); color: #fff; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  .win-actions .primary { background: #fff; color: #111; }
+  .float {
+    position: absolute; bottom: -60px; width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; opacity: 0;
+    box-shadow: 0 0 0 1.5px rgba(255,255,255,.5); animation: rise linear infinite;
+  }
+  .float svg { width: 70%; height: 70%; }
+  @keyframes rise {
+    0% { transform: translateY(0) rotate(0); opacity: 0; }
+    10% { opacity: .9; }
+    90% { opacity: .9; }
+    100% { transform: translateY(calc(-100vh - 120px)) rotate(var(--spin)); opacity: 0; }
+  }
+
   #sheet {
     position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none;
     align-items: flex-end; justify-content: center; z-index: 10;
@@ -136,8 +203,30 @@
   .toggle input[type=checkbox] { width: 22px; height: 22px; }
   .pl { display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 12px; }
   .swatches { display: flex; gap: 7px; flex-wrap: wrap; }
-  .sw { width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; padding: 0; }
+  .swatches { align-items: center; }
+  .sw {
+    width: 30px; height: 30px; border-radius: 50%; border: 3px solid transparent; padding: 0;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); position: relative;
+  }
   .sw.on { border-color: #fff; }
+  .sw.sym { width: 36px; height: 36px; border: 0; display: flex; align-items: center; justify-content: center; }
+  .sw.sym svg { width: 23px; height: 23px; }
+  .sw.sym.on { box-shadow: 0 0 0 2px #1c1c1e, 0 0 0 4.5px #fff; }
+  .sw.sym:not(.on) { opacity: .8; }
+  .sw.on:not(.sym)::after {
+    content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; color: #000;
+  }
+  .sw.on.darksw::after { color: #fff; }
+  .preview {
+    height: 34px; border-radius: 10px; background-size: cover; background-position: center;
+    display: flex; align-items: center; justify-content: flex-end; padding: 0 4px;
+  }
+  .reroll {
+    border: 0; border-radius: 8px; padding: 5px 10px; font-size: 13px; font-weight: 700;
+    background: rgba(0,0,0,.55); color: #fff;
+  }
+  .reroll.hidden { display: none; }
   .actions { display: flex; gap: 8px; margin-top: 20px; }
   .actions button { flex: 1; border: 0; border-radius: 12px; padding: 13px; font-weight: 700; background: #2c2c2e; }
   .actions .danger { background: #ff453a; color: #fff; }
@@ -149,6 +238,21 @@
 <div id="board">
   <div id="badges"></div>
   <button id="menuBtn" aria-label="Settings">⚙︎</button>
+</div>
+
+<div id="win" role="dialog" aria-label="Winner">
+  <div id="winFloats"></div>
+  <div class="win-card">
+    <div class="win-crown">👑</div>
+    <div class="win-pips" id="winPips"></div>
+    <div class="win-name" id="winName"></div>
+    <div class="win-sub">wins!</div>
+    <div class="win-stats" id="winStats"></div>
+    <div class="win-actions">
+      <button id="winBack">Keep playing</button>
+      <button id="winNew" class="primary">New game</button>
+    </div>
+  </div>
 </div>
 
 <div id="sheet">
@@ -187,7 +291,175 @@
 
 <script>
 (() => {
-  const COLORS = ['#fdeba6', '#ff5c5c', '#9dd443', '#2bcdfd', '#bba2ff', '#ffb05c', '#ff9ad5', '#d2d2d2'];
+  // The five Magic colors (W U B R G) first, then a few extras.
+  // WUBRG use the mana colors from the cards.
+  const WHITE = '#f8e7b9', BLUE = '#0e68ab', BLACK = '#150b00', RED = '#d3202a', GREEN = '#00733e';
+  const COLORS = [WHITE, BLUE, BLACK, RED, GREEN, '#bba2ff', '#ffb05c', '#ff9ad5', '#d2d2d2'];
+  const DEFAULT_COLORS = [WHITE, RED, GREEN, BLUE];
+  // Brighter versions of the dark mana colors, for text and badges on dark backgrounds.
+  const BRIGHT = { [BLUE]: '#4da6ea', [BLACK]: '#a89f96', [RED]: '#ff5a5f', [GREEN]: '#3fc27a' };
+  // Older versions of the app used these; map them onto the new ones.
+  const OLD = { '#fdeba6': WHITE, '#2bcdfd': BLUE, '#26262a': BLACK, '#ff5c5c': RED, '#9dd443': GREEN };
+
+  const lum = hex => {
+    const n = parseInt(hex.slice(1), 16);
+    const c = [n >> 16, (n >> 8) & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+    return .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+  };
+  const isDarkSet = cols => cols.reduce((a, c) => a + lum(c), 0) / cols.length < .25;
+  const newSeed = () => (Math.random() * 2 ** 31) | 0;
+  function rng(seed) { // mulberry32
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ---------- color symbols (simple sun / drop / skull / flame / tree glyphs) ----------
+  const sunPath = (() => {
+    let d = 'M12 7.6a4.4 4.4 0 1 1 0 8.8a4.4 4.4 0 1 1 0-8.8z';
+    for (let k = 0; k < 8; k++) {
+      const a = k * Math.PI / 4, w = .32;
+      const pt = (rad, ang) => (12 + rad * Math.cos(ang)).toFixed(2) + ' ' + (12 + rad * Math.sin(ang)).toFixed(2);
+      d += `M${pt(6, a - w)}L${pt(11, a)}L${pt(6, a + w)}z`;
+    }
+    return d;
+  })();
+  const GLYPHS = {
+    [WHITE]: (fg) => `<path fill="${fg}" d="${sunPath}"/>`,
+    [BLUE]: (fg) => `<path fill="${fg}" d="M12 2.2C12 2.2 5 10.4 5 15a7 7 0 0 0 14 0c0-4.6-7-12.8-7-12.8z"/>`,
+    [BLACK]: (fg, bg) => `<path fill="${fg}" d="M12 2.5c-4.7 0-8.3 3.3-8.3 7.9 0 2.6 1.1 4.5 2.8 5.7v3.4c0 .8.6 1.4 1.4 1.4h8.2c.8 0 1.4-.6 1.4-1.4v-3.4c1.7-1.2 2.8-3.1 2.8-5.7 0-4.6-3.6-7.9-8.3-7.9z"/>` +
+      `<circle cx="8.7" cy="11.2" r="2.1" fill="${bg}"/><circle cx="15.3" cy="11.2" r="2.1" fill="${bg}"/>` +
+      `<path fill="${bg}" d="M12 13.6l1.3 2.4h-2.6z"/><path stroke="${bg}" stroke-width="1" d="M10 18v2.4M12 18v2.4M14 18v2.4"/>`,
+    [RED]: (fg) => `<path fill="${fg}" d="M12.4 1.8c.6 3.6 5.6 6.6 5.6 12.2a6 6 0 0 1-12 0c0-2.9 1.4-4.9 3-6.5.1 2 .9 3.4 2.2 3.9-.4-3.3.1-6.6 1.2-9.6z"/>`,
+    [GREEN]: (fg) => `<path fill="${fg}" d="M12 2a5 5 0 0 0-4.7 3.4A4.6 4.6 0 0 0 4.6 13.6 4.4 4.4 0 0 0 9 18h2v4h2v-4h2a4.4 4.4 0 0 0 4.4-4.4 4.6 4.6 0 0 0-2.7-8.2A5 5 0 0 0 12 2z"/>`,
+  };
+  // An icon for one color: the glyph in a contrasting ink, or nothing for the extra colors.
+  function glyph(c) {
+    const g = GLYPHS[c];
+    if (!g) return '';
+    const fg = c === WHITE ? '#150b00' : '#f8f1dc';
+    return `<svg viewBox="0 0 24 24" aria-hidden="true">${g(fg, c)}</svg>`;
+  }
+
+  // ---------- swirl backgrounds ----------
+  // A single color is a flat fill. Several colors get a randomly chosen style,
+  // painted pixel by pixel on a canvas and bent by layered noise:
+  //   marble (flowing ribbons), silk (wide soft folds), split (one wavy region
+  //   per color), aurora (soft drifting curtains), mesh (smooth gradient),
+  //   lava (rounded blobs) and clouds (hazy mix).
+  // Painted once per color set + seed, then cached.
+  const STYLES = ['marble', 'silk', 'split', 'aurora', 'mesh', 'lava', 'clouds'];
+  const paintCache = {};
+  const rgbOf = hex => { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+  function valueNoise(seed) {
+    const r = rng(seed), P = new Float32Array(65536);
+    for (let i = 0; i < P.length; i++) P[i] = r();
+    return (x, y) => {
+      const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+      const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+      const i0 = (yi & 255) << 8, i1 = ((yi + 1) & 255) << 8, x0 = xi & 255, x1 = (xi + 1) & 255;
+      const a = P[i0 + x0], b = P[i0 + x1], c = P[i1 + x0], d = P[i1 + x1];
+      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    };
+  }
+  function paint(pl) {
+    const cols = pl.colors;
+    if (cols.length === 1) return cols[0];
+    const key = cols.join() + '|' + pl.seed;
+    if (paintCache[key]) return paintCache[key];
+
+    const r = rng(pl.seed);
+    const order = cols.slice().sort(() => r() - .5).map(rgbOf);
+    const n = order.length;
+    const noise = valueNoise(pl.seed);
+    const fbm = (x, y) => .5 * noise(x, y) + .25 * noise(x * 2.03, y * 2.03) + .125 * noise(x * 4.01, y * 4.01);
+    const pick = a => a[Math.floor(r() * a.length)];
+
+    const style = pick(STYLES);
+    const ang = r() * Math.PI, ca = Math.cos(ang), sa = Math.sin(ang);
+    const freq = 1.2 + r() * 1.4;
+    const ox = r() * 100, oy = r() * 100;
+
+    // per-style knobs
+    const banded = style === 'marble' || style === 'silk' || style === 'split' || style === 'aurora';
+    const B = {
+      marble: { bands: 1.6 + r() * 1.1, warp: 1.8 + r() * 1, soft: .25, vein: .2, sheen: .1 },
+      silk:   { bands: 1 + r() * .6,    warp: 1 + r() * .8,  soft: .6,  vein: 0,  sheen: .16 },
+      split:  { bands: 1,               warp: .12 + r() * .1, soft: .14, vein: .14, sheen: 0 },
+      aurora: { bands: .9 + r() * .4,   warp: .9 + r() * .5, soft: .65, vein: 0, sheen: .2 },
+    }[style];
+    // mesh / lava / clouds: soft color fields around scattered points
+    const pts = [];
+    if (!banded) {
+      const per = style === 'lava' ? 3 : 2;
+      for (let k = 0; k < n * per; k++) pts.push({ x: .05 + r() * .9, y: .05 + r() * .9, c: order[k % n] });
+    }
+    const power = style === 'lava' ? 5 : style === 'clouds' ? 1.4 : 2.2;
+    const jitter = style === 'clouds' ? .55 : style === 'lava' ? .18 : .25;
+
+    const N = 360;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = N;
+    const ctx = cv.getContext('2d');
+    const img = ctx.createImageData(N, N), px = img.data;
+    const out = [0, 0, 0];
+
+    for (let y = 0; y < N; y++) {
+      const v = y / N;
+      for (let x = 0; x < N; x++) {
+        const u = x / N;
+        // domain-warped noise for organic bending
+        const qx = fbm(u * freq + ox, v * freq + oy), qy = fbm(u * freq + ox + 5.2, v * freq + oy + 1.3);
+        let shade = 1, vein = 0;
+        if (banded) {
+          // aurora: noise stretched along the band direction gives long streaky curtains
+          const w = style === 'aurora'
+            ? fbm((-u * sa + v * ca) * 7 + qx + ox, (u * ca + v * sa) * .8 + oy) - .45
+            : fbm(u * freq + qx * 2.2 + ox, v * freq + qy * 2.2 + oy) - .45;
+          // split/silk keep each color in one wide region; the others repeat
+          const proj = (u - .5) * ca + (v - .5) * sa;
+          const t = style === 'split'
+            ? Math.min(n - .001, Math.max(0, (proj / 1.1 + .5) * n + w * B.warp * 2.5)) // each color once, evenly
+            : (proj + .7) * B.bands * n + w * B.warp * 2.5;
+          const ti = Math.floor(t), f = t - ti;
+          const c0 = order[((ti % n) + n) % n], c1 = order[(((ti + 1) % n) + n) % n];
+          let s = f > 1 - B.soft && !(style === 'split' && ti >= n - 1) ? (f - (1 - B.soft)) / B.soft : 0;
+          s = s * s * (3 - 2 * s);
+          for (let ch = 0; ch < 3; ch++) out[ch] = c0[ch] + (c1[ch] - c0[ch]) * s;
+          shade = 1 + B.sheen * (Math.sin(Math.PI * f) - .55);
+          vein = B.vein * Math.exp(-(f * f) / .0008);
+        } else {
+          const su = u + (qx - .45) * jitter, sv = v + (qy - .45) * jitter;
+          let tw = 0; out[0] = out[1] = out[2] = 0;
+          for (const p of pts) {
+            const dx = su - p.x, dy = sv - p.y;
+            const wt = 1 / Math.pow(dx * dx + dy * dy + .002, power);
+            tw += wt;
+            out[0] += p.c[0] * wt; out[1] += p.c[1] * wt; out[2] += p.c[2] * wt;
+          }
+          out[0] /= tw; out[1] /= tw; out[2] /= tw;
+          if (style === 'clouds') shade = .94 + .12 * fbm(u * 6 + ox, v * 6 + oy);
+        }
+        const vig = 1 - .18 * Math.max(0, Math.hypot(u - .5, v - .5) - .3);
+        const k = (y * N + x) * 4;
+        for (let ch = 0; ch < 3; ch++) {
+          let c = out[ch] * shade * vig;
+          px[k + ch] = c + (255 - c) * vein;
+        }
+        px[k + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const base = cols[0];
+    try { return (paintCache[key] = `url("${cv.toDataURL('image/jpeg', .9)}") center / cover, ${base}`); }
+    catch { return (paintCache[key] = base); }
+  }
+  // A single color to represent a player on dark UI (badges, commander-damage readout).
+  const accent = pl => { const c = pl.colors.find(c => c !== BLACK) || BLACK; return BRIGHT[c] || c; };
 
   // Panel rectangles as fractions of the board, plus the rotation that makes
   // each panel face its player. 90 = player sits on the left side of the phone,
@@ -214,7 +486,7 @@
   const KEY = 'mtg-life-v1';
   const defaults = () => ({
     settings: { count: 4, startLife: 40, cmdOn: true, cmdLimit: 21, poisonOn: true, poisonLimit: 10 },
-    players: [0, 1, 2, 3].map(i => ({ name: 'Player ' + (i + 1), color: COLORS[i] })),
+    players: [0, 1, 2, 3].map(i => ({ name: 'Player ' + (i + 1), colors: [DEFAULT_COLORS[i]], seed: newSeed() })),
     game: null,
   });
 
@@ -222,6 +494,13 @@
   try { S = JSON.parse(localStorage.getItem(KEY)) || defaults(); } catch { S = defaults(); }
   S = Object.assign(defaults(), S);
   S.settings = Object.assign(defaults().settings, S.settings);
+  // migrate older saves that stored a single `color`
+  S.players.forEach((pl, i) => {
+    if (!Array.isArray(pl.colors) || !pl.colors.length) pl.colors = [pl.color || DEFAULT_COLORS[i]];
+    delete pl.color;
+    pl.colors = [...new Set(pl.colors.map(c => OLD[c] || c))];
+    if (typeof pl.seed !== 'number') pl.seed = newSeed();
+  });
 
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
 
@@ -268,13 +547,13 @@
           <div class="glyph minus">−</div><div class="glyph plus">+</div>
           <div class="center"><div class="label"></div><div class="num"></div><div class="sub"></div></div>
           <div class="delta"></div>
-          <div class="foot"><span class="name"></span><button class="poison"></button></div>
+          <div class="foot"><span class="who"><span class="pips"></span><span class="name"></span></span><button class="poison"></button></div>
         </div>`;
       board.insertBefore(el, badgesEl);
       const q = s => el.querySelector(s);
       const p = {
         el, inner: q('.inner'), label: q('.label'), num: q('.num'), sub: q('.sub'),
-        delta: q('.delta'), name: q('.name'), poison: q('.poison'),
+        delta: q('.delta'), name: q('.name'), poison: q('.poison'), pips: q('.pips'),
       };
       bindZone(q('.zone.minus'), i, -1);
       bindZone(q('.zone.plus'), i, +1);
@@ -363,8 +642,16 @@
     const g = S.game, st = S.settings;
     panels.forEach((p, i) => {
       const pl = S.players[i], m = modes[i];
-      p.el.style.background = pl.color;
+      const bg = paint(pl);
+      if (p.bg !== bg) { p.el.style.background = bg; p.bg = bg; }
+      p.el.classList.toggle('dark', pl.colors.length === 1 && isDarkSet(pl.colors));
+      p.el.classList.toggle('multi', pl.colors.length > 1);
       p.name.textContent = (isDead(i) ? '☠ ' : '') + pl.name;
+      const pipKey = pl.colors.join();
+      if (p.pipKey !== pipKey) {
+        p.pipKey = pipKey;
+        p.pips.innerHTML = pl.colors.filter(c => GLYPHS[c]).map(c => `<span class="pip" style="background:${c}">${glyph(c)}</span>`).join('');
+      }
       p.el.classList.toggle('dead', isDead(i));
       p.el.classList.toggle('alt', m.type !== 'life');
 
@@ -375,9 +662,9 @@
       if (m.type === 'cmd') {
         const src = S.players[m.src];
         p.label.textContent = '⚔ from ' + src.name;
-        p.label.style.color = src.color;
+        p.label.style.color = accent(src);
         p.num.textContent = g.cmd[i][m.src];
-        p.num.style.color = src.color;
+        p.num.style.color = accent(src);
         p.sub.textContent = '♥ ' + g.life[i];
       } else if (m.type === 'poison') {
         p.label.textContent = '☣ Poison';
@@ -397,11 +684,60 @@
         const b = badges[i + '-' + j];
         b.classList.toggle('hidden', !st.cmdOn);
         b.textContent = g.cmd[i][j];
-        b.style.color = S.players[j].color;
+        b.style.color = accent(S.players[j]);
         b.classList.toggle('active', m.type === 'cmd' && m.src === j);
         b.classList.toggle('lethal', g.cmd[i][j] >= st.cmdLimit);
       }
     });
+    checkWin();
+  }
+
+  // ---------- win screen ----------
+  // Shown once when exactly one player is left standing. "Keep playing" hides it
+  // (remembered in the save); it comes back if someone revives and dies again.
+  const winEl = document.getElementById('win');
+  function checkWin() {
+    const g = S.game;
+    const alive = [...Array(g.n).keys()].filter(i => !isDead(i));
+    if (alive.length !== 1) {
+      if (g.winSeen != null) { g.winSeen = null; save(); }
+      if (winEl.classList.contains('open')) winEl.classList.remove('open');
+      return;
+    }
+    const w = alive[0];
+    if (g.winSeen === w || winEl.classList.contains('open')) return;
+    showWin(w);
+  }
+  function showWin(w) {
+    const pl = S.players[w], g = S.game;
+    winEl.style.background = paint(pl);
+    document.getElementById('winName').textContent = pl.name;
+    document.getElementById('winPips').innerHTML =
+      pl.colors.filter(c => GLYPHS[c]).map(c => `<span class="pip" style="background:${c}">${glyph(c)}</span>`).join('');
+    const life = g.life[w];
+    const extra = S.settings.poisonOn && g.poison[w] ? ` · ☣ ${g.poison[w]}` : '';
+    document.getElementById('winStats').textContent = `♥ ${life} life left${extra}`;
+    // face the winner
+    const rot = LAYOUTS[g.n][w].r;
+    winEl.querySelector('.win-card').style.rotate = rot + 'deg';
+    // floating symbols in the winner's colors (all five if they only use extra colors)
+    const syms = pl.colors.filter(c => GLYPHS[c]);
+    const pool = syms.length ? syms : [WHITE, BLUE, BLACK, RED, GREEN];
+    let html = '';
+    for (let k = 0; k < 26; k++) {
+      const c = pool[k % pool.length], size = 22 + Math.random() * 26;
+      html += `<span class="float" style="left:${(Math.random() * 100).toFixed(1)}%;width:${size}px;height:${size}px;` +
+        `background:${c};animation-duration:${(5 + Math.random() * 6).toFixed(1)}s;animation-delay:${(-Math.random() * 10).toFixed(1)}s;` +
+        `--spin:${Math.round((Math.random() - .5) * 540)}deg">${glyph(c)}</span>`;
+    }
+    document.getElementById('winFloats').innerHTML = html;
+    closeSheet();
+    winEl.classList.add('open');
+  }
+  function hideWin() {
+    S.game.winSeen = S.game.life.findIndex((_, i) => !isDead(i));
+    save();
+    winEl.classList.remove('open');
   }
 
   // ---------- interaction ----------
@@ -519,12 +855,30 @@
       sw.className = 'swatches';
       COLORS.forEach(c => {
         const b = document.createElement('button');
-        b.className = 'sw' + (c === pl.color ? ' on' : '');
+        const on = pl.colors.includes(c);
+        b.className = 'sw' + (on ? ' on' : '') + (lum(c) < .25 ? ' darksw' : '') + (GLYPHS[c] ? ' sym' : '');
         b.style.background = c;
-        b.addEventListener('click', () => { pl.color = c; save(); render(); fillSheet(); });
+        b.innerHTML = glyph(c);
+        b.setAttribute('aria-pressed', on);
+        b.addEventListener('click', () => {
+          if (on) { if (pl.colors.length > 1) pl.colors = pl.colors.filter(x => x !== c); }
+          else pl.colors = [...pl.colors, c];
+          pl.seed = newSeed();
+          save(); render(); fillSheet();
+        });
         sw.appendChild(b);
       });
-      wrap.append(inp, sw);
+      // live preview of the panel background, with a re-roll for blends
+      const pv = document.createElement('div');
+      pv.className = 'preview';
+      pv.dataset.i = i;
+      pv.style.background = paint(pl);
+      const rr = document.createElement('button');
+      rr.className = 'reroll' + (pl.colors.length > 1 ? '' : ' hidden');
+      rr.textContent = '🔀 New swirl';
+      rr.addEventListener('click', () => { pl.seed = newSeed(); save(); render(); fillSheet(); });
+      pv.appendChild(rr);
+      wrap.append(inp, sw, pv);
       pe.appendChild(wrap);
     }
   }
@@ -560,6 +914,8 @@
     newGame(); $('lifeHint').textContent = ''; render(); closeSheet();
   });
   $('firstBtn').addEventListener('click', pickFirst);
+  $('winBack').addEventListener('click', hideWin);
+  $('winNew').addEventListener('click', () => { winEl.classList.remove('open'); newGame(); render(); });
   $('closeBtn').addEventListener('click', closeSheet);
   sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
   menuBtn.addEventListener('click', openSheet);

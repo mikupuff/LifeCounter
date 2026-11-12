@@ -7,6 +7,8 @@ A life counter for Magic: The Gathering with commander damage and poison, made t
 - The **small colored numbers** on your panel's edges show the commander damage you've taken from each player. Each one sits on the side facing that player, or in the corner for the player diagonal from you. Tap one to show that damage as the big number. Changing it also changes your life the opposite way. Tap it again to go back, or wait 7 seconds.
 - **☣** opens your poison counter the same way. It doesn't change life.
 - **⚙︎** in the middle opens settings: player count (2–4), starting life, the lethal limits for commander damage and poison, names, colors, a "who goes first" picker and reset.
+- **🔥** next to a name is that player's win streak: games won in a row. It goes up when they're the last one standing and resets when someone else wins. The win screen also shows total wins. Clear them in settings.
+- The screen stays on while the app is open.
 - Your game is saved automatically, so closing the app doesn't lose it.
 
 ## Publishing it with GitHub Pages

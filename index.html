@@ -99,6 +99,11 @@
   }
   .pip svg { width: 13px; height: 13px; }
   .panel.alt .name { color: #fff; }
+  .streak {
+    flex: none; font-weight: 800; font-size: 13px; padding: 2px 7px; border-radius: 99px;
+    background: rgba(0,0,0,.55); color: #ffb347; text-shadow: none;
+  }
+  .streak.hidden { display: none; }
   .poison {
     pointer-events: auto; border: 0; border-radius: 99px; padding: 5px 11px;
     background: rgba(0,0,0,.16); font-weight: 700; font-size: 14px;
@@ -285,6 +290,9 @@
     <div class="actions">
       <button id="firstBtn">🎲 Who goes first</button>
       <button id="resetBtn" class="danger">Reset game</button>
+    </div>
+    <div class="actions">
+      <button id="streakBtn">🔥 Clear win streaks</button>
     </div>
   </div>
 </div>
@@ -500,6 +508,8 @@
     delete pl.color;
     pl.colors = [...new Set(pl.colors.map(c => OLD[c] || c))];
     if (typeof pl.seed !== 'number') pl.seed = newSeed();
+    if (typeof pl.streak !== 'number') pl.streak = 0;
+    if (typeof pl.wins !== 'number') pl.wins = 0;
   });
 
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
@@ -547,13 +557,13 @@
           <div class="glyph minus">−</div><div class="glyph plus">+</div>
           <div class="center"><div class="label"></div><div class="num"></div><div class="sub"></div></div>
           <div class="delta"></div>
-          <div class="foot"><span class="who"><span class="pips"></span><span class="name"></span></span><button class="poison"></button></div>
+          <div class="foot"><span class="who"><span class="pips"></span><span class="name"></span><span class="streak hidden"></span></span><button class="poison"></button></div>
         </div>`;
       board.insertBefore(el, badgesEl);
       const q = s => el.querySelector(s);
       const p = {
         el, inner: q('.inner'), label: q('.label'), num: q('.num'), sub: q('.sub'),
-        delta: q('.delta'), name: q('.name'), poison: q('.poison'), pips: q('.pips'),
+        delta: q('.delta'), name: q('.name'), poison: q('.poison'), pips: q('.pips'), streak: q('.streak'),
       };
       bindZone(q('.zone.minus'), i, -1);
       bindZone(q('.zone.plus'), i, +1);
@@ -570,6 +580,7 @@
       }
     }
     layout();
+    renderStreaks();
     render();
   }
 
@@ -705,8 +716,32 @@
       return;
     }
     const w = alive[0];
+    recordWin(w);
     if (g.winSeen === w || winEl.classList.contains('open')) return;
     showWin(w);
+  }
+  // Counts a game's winner once. The streaks from before the game are kept, so if
+  // someone revives and a different player ends up winning, the first result is undone.
+  function recordWin(w) {
+    const g = S.game;
+    if (g.recorded && g.recorded.w === w) return;
+    const seats = [...Array(g.n).keys()];
+    if (g.recorded) seats.forEach(i => {
+      S.players[i].streak = g.recorded.streaks[i];
+      S.players[i].wins = g.recorded.wins[i];
+    });
+    g.recorded = { w, streaks: seats.map(i => S.players[i].streak), wins: seats.map(i => S.players[i].wins) };
+    seats.forEach(i => { S.players[i].streak = i === w ? S.players[i].streak + 1 : 0; });
+    S.players[w].wins++;
+    save();
+    renderStreaks();
+  }
+  function renderStreaks() {
+    panels.forEach((p, i) => {
+      const s = S.players[i].streak;
+      p.streak.textContent = s ? '🔥' + s : '';
+      p.streak.classList.toggle('hidden', !s);
+    });
   }
   function showWin(w) {
     const pl = S.players[w], g = S.game;
@@ -716,7 +751,9 @@
       pl.colors.filter(c => GLYPHS[c]).map(c => `<span class="pip" style="background:${c}">${glyph(c)}</span>`).join('');
     const life = g.life[w];
     const extra = S.settings.poisonOn && g.poison[w] ? ` · ☣ ${g.poison[w]}` : '';
-    document.getElementById('winStats').textContent = `♥ ${life} life left${extra}`;
+    const s = pl.streak;
+    const streak = s >= 2 ? ` · 🔥 ${s} in a row` : '';
+    document.getElementById('winStats').textContent = `♥ ${life} life left${extra}${streak} · ${pl.wins} win${pl.wins === 1 ? '' : 's'} total`;
     // face the winner
     const rot = LAYOUTS[g.n][w].r;
     winEl.querySelector('.win-card').style.rotate = rot + 'deg';
@@ -799,7 +836,6 @@
     const stop = () => { clearTimeout(hold); clearInterval(rep); z.classList.remove('pressed'); };
     z.addEventListener('pointerdown', e => {
       e.preventDefault();
-      keepAwake();
       try { z.setPointerCapture(e.pointerId); } catch {}
       held = false; z.classList.add('pressed');
       hold = setTimeout(() => {
@@ -914,6 +950,12 @@
     newGame(); $('lifeHint').textContent = ''; render(); closeSheet();
   });
   $('firstBtn').addEventListener('click', pickFirst);
+  $('streakBtn').addEventListener('click', () => {
+    if (!confirm('Clear every player\'s win streak and win count?')) return;
+    S.players.forEach(pl => { pl.streak = 0; pl.wins = 0; });
+    if (S.game.recorded) S.game.recorded = { w: S.game.recorded.w, streaks: Array(S.game.n).fill(0), wins: Array(S.game.n).fill(0) };
+    save(); renderStreaks();
+  });
   $('winBack').addEventListener('click', hideWin);
   $('winNew').addEventListener('click', () => { winEl.classList.remove('open'); newGame(); render(); });
   $('closeBtn').addEventListener('click', closeSheet);
@@ -921,25 +963,65 @@
   menuBtn.addEventListener('click', openSheet);
 
   // ---------- platform bits ----------
-  let wakeLock = null;
-  async function keepAwake() {
-    try {
-      if ('wakeLock' in navigator && !wakeLock && document.visibilityState === 'visible') {
-        wakeLock = await navigator.wakeLock.request('screen');
-        wakeLock.addEventListener('release', () => { wakeLock = null; });
-      }
-    } catch {}
+  // Keep the screen on. The Wake Lock API is the main way; the system can drop
+  // the lock at any time (app hidden, low power, older iOS home-screen apps), so it
+  // is re-requested on every touch, on return to the app and every 20 s.
+  // A tiny muted looping video is a fallback for when the API is missing or fails.
+  let wakeLock = null, wakePending = false, wakeVideo = null;
+  function videoFallback() {
+    if (!wakeVideo) {
+      wakeVideo = document.createElement('video');
+      wakeVideo.src = 'data:video/mp4;base64,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bWFfbWU9MSB0cmVsbGlzPTEgOHg4ZGN0PTAgY3FtPTAgZGVhZHpvbmU9MjEsMTEgZmFzdF9wc2tpcD0xIGNocm9tYV9xcF9vZmZzZXQ9LTQgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjIwAIAAAAAPZYiEBfOf//8PRQABV5+AARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcAAAAHQZo4C+c6gAEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAH';
+      wakeVideo.muted = true; wakeVideo.loop = true;
+      wakeVideo.setAttribute('muted', ''); wakeVideo.setAttribute('playsinline', '');
+      wakeVideo.setAttribute('aria-hidden', 'true');
+      Object.assign(wakeVideo.style, { position: 'fixed', width: '1px', height: '1px', opacity: '0.01', left: '0', top: '0', pointerEvents: 'none' });
+      document.body.appendChild(wakeVideo);
+    }
+    if (wakeVideo.paused) wakeVideo.play().catch(() => {});
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+  async function keepAwake() {
+    if (document.visibilityState !== 'visible') return;
+    if (!('wakeLock' in navigator)) { videoFallback(); return; }
+    if ((wakeLock && !wakeLock.released) || wakePending) return;
+    wakePending = true;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+      if (wakeVideo && !wakeVideo.paused) wakeVideo.pause();
+    } catch { wakeLock = null; videoFallback(); }
+    finally { wakePending = false; }
+  }
+  // iOS only lets a video start from a completed tap, so try again on touchend too
+  ['pointerdown', 'touchend', 'click'].forEach(ev => document.addEventListener(ev, keepAwake, true));
+  setInterval(keepAwake, 20000);
   document.addEventListener('gesturestart', e => e.preventDefault()); // block pinch-zoom on iOS
-  window.addEventListener('resize', layout);
-  window.addEventListener('orientationchange', () => setTimeout(layout, 300));
+
+  // Re-measure whenever the board's size changes, and again after coming back
+  // to the app: iOS can resume a home-screen app with a stale viewport or a
+  // scrolled page, which leaves the touch areas out of line with what's drawn.
+  function relayout() {
+    if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+    if (board.clientWidth && board.clientHeight) layout();
+  }
+  function onResume() {
+    keepAwake();
+    [0, 150, 500, 1000].forEach(t => setTimeout(relayout, t));
+  }
+  if ('ResizeObserver' in window) new ResizeObserver(relayout).observe(board);
+  window.addEventListener('resize', relayout);
+  window.visualViewport && window.visualViewport.addEventListener('resize', relayout);
+  window.addEventListener('orientationchange', onResume);
+  window.addEventListener('pageshow', onResume);
+  window.addEventListener('focus', onResume);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onResume(); });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
   build();
+  keepAwake();
 })();
 </script>
 </body>

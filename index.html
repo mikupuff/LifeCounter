@@ -50,6 +50,14 @@
   @keyframes pick { from { filter: brightness(1.6); } to { filter: none; } }
 
   .inner { position: absolute; left: 50%; top: 50%; }
+  /* commander art sits inside the rotated .inner so it faces its player */
+  .art { position: absolute; inset: 0; background-size: cover; background-position: center; pointer-events: none; display: none; }
+  .panel.hasart .art { display: block; }
+  .art::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,.6), transparent 38%),
+                radial-gradient(ellipse at center, rgba(0,0,0,.42), rgba(0,0,0,.18) 75%);
+  }
   .shade { position: absolute; inset: 0; background: rgba(0,0,0,.72); opacity: 0; transition: opacity .15s; pointer-events: none; }
   .panel.alt .shade { opacity: 1; }
 
@@ -92,7 +100,8 @@
   }
   .who { display: flex; align-items: center; gap: 7px; max-width: 65%; min-width: 0; }
   .name { font-weight: 700; font-size: 14px; opacity: .55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .pips { display: flex; gap: 3px; flex: none; }
+  /* this player's commander-damage color, so badges elsewhere can be matched to them */
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1.5px rgba(0,0,0,.5); }
   .pip {
     width: 19px; height: 19px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     box-shadow: 0 0 0 1.5px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.35);
@@ -232,6 +241,19 @@
     background: rgba(0,0,0,.55); color: #fff;
   }
   .reroll.hidden { display: none; }
+  .seg.mode button { flex: 1; padding: 7px 10px; }
+  .cmdr { display: flex; gap: 6px; align-items: center; }
+  .cmdr input { flex: 1; min-width: 0; }
+  .cmdr .x { flex: none; }
+  .cmdr input:disabled { opacity: .6; }
+  .sugg { display: flex; flex-direction: column; gap: 2px; }
+  .sugg:empty { display: none; }
+  .sugg button {
+    border: 0; background: #2c2c2e; border-radius: 8px; padding: 9px 12px; text-align: left;
+    font-size: 15px; font-weight: 600;
+  }
+  .sugg .msg { font-size: 13px; color: #8e8e93; padding: 4px 2px; }
+  .credit { font-size: 12px; color: #8e8e93; }
   .actions { display: flex; gap: 8px; margin-top: 20px; }
   .actions button { flex: 1; border: 0; border-radius: 12px; padding: 13px; font-weight: 700; background: #2c2c2e; }
   .actions .danger { background: #ff453a; color: #fff; }
@@ -466,8 +488,73 @@
     try { return (paintCache[key] = `url("${cv.toDataURL('image/jpeg', .9)}") center / cover, ${base}`); }
     catch { return (paintCache[key] = base); }
   }
+  // ---------- commander art (Scryfall) ----------
+  const SF = 'https://api.scryfall.com';
+  const sf = path => fetch(SF + path, { headers: { Accept: 'application/json' } })
+    .then(r => r.ok ? r.json() : r.status === 404 ? { data: [] } : Promise.reject(r.status));
+  const artOf = c => ((c.image_uris || (c.card_faces && c.card_faces[0].image_uris)) || {}).art_crop;
+  const artistOf = c => c.artist || (c.card_faces && c.card_faces[0].artist) || '';
+  const artUrl = pl => (pl.mode === 'cmdr' && pl.commander && pl.commander.art) || '';
+  const MANA = { W: WHITE, U: BLUE, B: BLACK, R: RED, G: GREEN };
+
+  // Commanders matching the typed text, most-played first (EDHREC rank).
+  const searchCommanders = text =>
+    sf('/cards/search?order=edhrec&unique=cards&q=' + encodeURIComponent(text + ' is:commander'))
+      .then(r => r.data.slice(0, 6));
+
+  // Pick the printing whose art to show: a full-art print if there is one, then a
+  // borderless one, newest first. Otherwise Scryfall's default printing of the card.
+  async function bestPrint(card) {
+    try {
+      const q = `oracleid:${card.oracle_id} (is:full or border:borderless)`;
+      const r = await sf('/cards/search?unique=art&order=released&dir=desc&q=' + encodeURIComponent(q));
+      const prints = r.data.filter(artOf).sort((a, b) => b.full_art - a.full_art);
+      if (prints.length) return prints[0];
+    } catch {}
+    try {
+      const d = await sf('/cards/named?exact=' + encodeURIComponent(card.name));
+      if (artOf(d)) return d;
+    } catch {}
+    return card;
+  }
+
+  async function setCommander(i, card, inp) {
+    const pl = S.players[i];
+    inp.disabled = true; inp.value = 'Finding art…';
+    const pr = await bestPrint(card);
+    pl.commander = {
+      name: card.name.split(' // ')[0], oracle: card.oracle_id, ci: card.color_identity || [],
+      art: artOf(pr) || '', artist: artistOf(pr), set: pr.set_name || '',
+    };
+    save(); render(); fillSheet();
+  }
+
   // A single color to represent a player on dark UI (badges, commander-damage readout).
-  const accent = pl => { const c = pl.colors.find(c => c !== BLACK) || BLACK; return BRIGHT[c] || c; };
+  // A player's own colors: the swirl colors, or their commander's color identity.
+  const ownColors = pl => pl.mode === 'cmdr' && pl.commander
+    ? [...'WUBRG'].filter(c => (pl.commander.ci || []).includes(c)).map(c => MANA[c])
+    : pl.colors;
+  // Commander-damage colors, one per seat and never shared. Players who picked a
+  // single swirl color get it first; then single-color commanders get theirs
+  // (earlier seat wins a tie); everyone else (multicolor, colorless, or a clash)
+  // gets a random leftover color, fixed by their seed so it doesn't jump.
+  const ACCENTS = ['#4da6ea', '#ff5a5f', '#3fc27a', '#bba2ff', '#ffb05c', '#ff9ad5', '#5ce1e6', '#f8e7b9', '#c6e85a'];
+  function accents() {
+    const n = S.game.n, out = Array(n), used = new Set();
+    for (const chosen of [true, false]) for (let i = 0; i < n; i++) {
+      const pl = S.players[i], own = ownColors(pl);
+      if (out[i] || own.length !== 1 || (pl.mode === 'color') !== chosen) continue;
+      const c = BRIGHT[own[0]] || own[0];
+      if (!used.has(c)) { out[i] = c; used.add(c); }
+    }
+    for (let i = 0; i < n; i++) {
+      if (out[i]) continue;
+      const free = ACCENTS.filter(c => !used.has(c));
+      out[i] = free[Math.floor(rng(S.players[i].seed)() * free.length)];
+      used.add(out[i]);
+    }
+    return out;
+  }
 
   // Panel rectangles as fractions of the board, plus the rotation that makes
   // each panel face its player. 90 = player sits on the left side of the phone,
@@ -510,6 +597,7 @@
     if (typeof pl.seed !== 'number') pl.seed = newSeed();
     if (typeof pl.streak !== 'number') pl.streak = 0;
     if (typeof pl.wins !== 'number') pl.wins = 0;
+    if (pl.mode !== 'cmdr' && pl.mode !== 'color') pl.mode = pl.commander ? 'cmdr' : 'color';
   });
 
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
@@ -552,18 +640,19 @@
       el.className = 'panel';
       el.innerHTML = `
         <div class="inner">
+          <div class="art"></div>
           <div class="shade"></div>
           <div class="zone minus"></div><div class="zone plus"></div>
           <div class="glyph minus">−</div><div class="glyph plus">+</div>
           <div class="center"><div class="label"></div><div class="num"></div><div class="sub"></div></div>
           <div class="delta"></div>
-          <div class="foot"><span class="who"><span class="pips"></span><span class="name"></span><span class="streak hidden"></span></span><button class="poison"></button></div>
+          <div class="foot"><span class="who"><span class="dot"></span><span class="name"></span><span class="streak hidden"></span></span><button class="poison"></button></div>
         </div>`;
       board.insertBefore(el, badgesEl);
       const q = s => el.querySelector(s);
       const p = {
-        el, inner: q('.inner'), label: q('.label'), num: q('.num'), sub: q('.sub'),
-        delta: q('.delta'), name: q('.name'), poison: q('.poison'), pips: q('.pips'), streak: q('.streak'),
+        el, inner: q('.inner'), art: q('.art'), label: q('.label'), num: q('.num'), sub: q('.sub'),
+        delta: q('.delta'), name: q('.name'), poison: q('.poison'), dot: q('.dot'), streak: q('.streak'),
       };
       bindZone(q('.zone.minus'), i, -1);
       bindZone(q('.zone.plus'), i, +1);
@@ -651,18 +740,18 @@
 
   function render() {
     const g = S.game, st = S.settings;
+    const acc = accents();
     panels.forEach((p, i) => {
       const pl = S.players[i], m = modes[i];
       const bg = paint(pl);
       if (p.bg !== bg) { p.el.style.background = bg; p.bg = bg; }
-      p.el.classList.toggle('dark', pl.colors.length === 1 && isDarkSet(pl.colors));
-      p.el.classList.toggle('multi', pl.colors.length > 1);
+      const art = artUrl(pl);
+      if (p.artUrl !== art) { p.art.style.backgroundImage = art ? `url("${art}")` : ''; p.artUrl = art; }
+      p.el.classList.toggle('hasart', !!art);
+      p.el.classList.toggle('dark', !art && pl.colors.length === 1 && isDarkSet(pl.colors));
+      p.el.classList.toggle('multi', !!art || pl.colors.length > 1);
       p.name.textContent = (isDead(i) ? '☠ ' : '') + pl.name;
-      const pipKey = pl.colors.join();
-      if (p.pipKey !== pipKey) {
-        p.pipKey = pipKey;
-        p.pips.innerHTML = pl.colors.filter(c => GLYPHS[c]).map(c => `<span class="pip" style="background:${c}">${glyph(c)}</span>`).join('');
-      }
+      p.dot.style.background = acc[i];
       p.el.classList.toggle('dead', isDead(i));
       p.el.classList.toggle('alt', m.type !== 'life');
 
@@ -673,9 +762,9 @@
       if (m.type === 'cmd') {
         const src = S.players[m.src];
         p.label.textContent = '⚔ from ' + src.name;
-        p.label.style.color = accent(src);
+        p.label.style.color = acc[m.src];
         p.num.textContent = g.cmd[i][m.src];
-        p.num.style.color = accent(src);
+        p.num.style.color = acc[m.src];
         p.sub.textContent = '♥ ' + g.life[i];
       } else if (m.type === 'poison') {
         p.label.textContent = '☣ Poison';
@@ -695,7 +784,7 @@
         const b = badges[i + '-' + j];
         b.classList.toggle('hidden', !st.cmdOn);
         b.textContent = g.cmd[i][j];
-        b.style.color = accent(S.players[j]);
+        b.style.color = acc[j];
         b.classList.toggle('active', m.type === 'cmd' && m.src === j);
         b.classList.toggle('lethal', g.cmd[i][j] >= st.cmdLimit);
       }
@@ -745,10 +834,12 @@
   }
   function showWin(w) {
     const pl = S.players[w], g = S.game;
-    winEl.style.background = paint(pl);
+    const art = artUrl(pl);
+    winEl.style.background = art ? `url("${art}") center / cover, ${paint(pl)}` : paint(pl);
     document.getElementById('winName').textContent = pl.name;
+    const own = ownColors(pl);
     document.getElementById('winPips').innerHTML =
-      pl.colors.filter(c => GLYPHS[c]).map(c => `<span class="pip" style="background:${c}">${glyph(c)}</span>`).join('');
+      own.filter(c => GLYPHS[c]).map(c => `<span class="pip" style="background:${c}">${glyph(c)}</span>`).join('');
     const life = g.life[w];
     const extra = S.settings.poisonOn && g.poison[w] ? ` · ☣ ${g.poison[w]}` : '';
     const s = pl.streak;
@@ -758,7 +849,7 @@
     const rot = LAYOUTS[g.n][w].r;
     winEl.querySelector('.win-card').style.rotate = rot + 'deg';
     // floating symbols in the winner's colors (all five if they only use extra colors)
-    const syms = pl.colors.filter(c => GLYPHS[c]);
+    const syms = own.filter(c => GLYPHS[c]);
     const pool = syms.length ? syms : [WHITE, BLUE, BLACK, RED, GREEN];
     let html = '';
     for (let k = 0; k < 26; k++) {
@@ -887,6 +978,47 @@
       const inp = document.createElement('input');
       inp.type = 'text'; inp.value = pl.name; inp.maxLength = 16;
       inp.addEventListener('input', () => { pl.name = inp.value || 'Player ' + (i + 1); save(); render(); });
+
+      // commander search
+      const cm = document.createElement('div');
+      cm.className = 'cmdr';
+      const ci = document.createElement('input');
+      Object.assign(ci, { type: 'text', placeholder: 'Commander (search)', autocomplete: 'off', spellcheck: false, enterKeyHint: 'search' });
+      ci.value = pl.commander ? pl.commander.name : '';
+      cm.appendChild(ci);
+      if (pl.commander) {
+        const x = document.createElement('button');
+        x.className = 'x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Remove commander');
+        x.addEventListener('click', () => { pl.commander = null; save(); render(); fillSheet(); });
+        cm.appendChild(x);
+      }
+      const sug = document.createElement('div');
+      sug.className = 'sugg';
+      let timer, ticket = 0, found = [];
+      const show = list => {
+        found = list; sug.innerHTML = '';
+        list.forEach(c => {
+          const b = document.createElement('button');
+          b.textContent = c.name;
+          b.addEventListener('click', () => setCommander(i, c, ci));
+          sug.appendChild(b);
+        });
+      };
+      const say = msg => { found = []; sug.innerHTML = `<div class="msg">${msg}</div>`; };
+      ci.addEventListener('input', () => {
+        clearTimeout(timer);
+        const t = ci.value.trim(), my = ++ticket;
+        if (t.length < 2) { show([]); return; }
+        timer = setTimeout(() => searchCommanders(t)
+          .then(l => { if (my === ticket) l.length ? show(l) : say('No commanders found'); })
+          .catch(() => { if (my === ticket) say('Couldn\'t reach Scryfall'); }), 300);
+      });
+      ci.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && found[0]) { e.preventDefault(); setCommander(i, found[0], ci); }
+      });
+      const credit = document.createElement('div');
+      credit.className = 'credit';
+      if (pl.commander && pl.commander.artist) credit.textContent = `Art by ${pl.commander.artist} · ${pl.commander.set} · via Scryfall`;
       const sw = document.createElement('div');
       sw.className = 'swatches';
       COLORS.forEach(c => {
@@ -908,13 +1040,27 @@
       const pv = document.createElement('div');
       pv.className = 'preview';
       pv.dataset.i = i;
-      pv.style.background = paint(pl);
+      const art = artUrl(pl);
+      pv.style.background = art ? `linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.15)), url("${art}") center / cover` : paint(pl);
       const rr = document.createElement('button');
-      rr.className = 'reroll' + (pl.colors.length > 1 ? '' : ' hidden');
+      rr.className = 'reroll' + (pl.colors.length > 1 && !art ? '' : ' hidden');
       rr.textContent = '🔀 New swirl';
       rr.addEventListener('click', () => { pl.seed = newSeed(); save(); render(); fillSheet(); });
       pv.appendChild(rr);
-      wrap.append(inp, sw, pv);
+      // background: commander art or a color swirl
+      const ms = document.createElement('div');
+      ms.className = 'seg mode';
+      [['cmdr', 'Commander'], ['color', 'Color swirl']].forEach(([k, label]) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.classList.toggle('on', pl.mode === k);
+        b.addEventListener('click', () => { if (pl.mode === k) return; pl.mode = k; save(); render(); fillSheet(); });
+        ms.appendChild(b);
+      });
+      if (pl.mode === 'cmdr') {
+        wrap.append(inp, ms, cm, sug, pv);
+        if (credit.textContent) wrap.appendChild(credit);
+      } else wrap.append(inp, ms, sw, pv);
       pe.appendChild(wrap);
     }
   }

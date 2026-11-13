@@ -502,14 +502,26 @@
     sf('/cards/search?order=edhrec&unique=cards&q=' + encodeURIComponent(text + ' is:commander'))
       .then(r => r.data.slice(0, 6));
 
-  // Pick the printing whose art to show: a full-art print if there is one, then a
-  // borderless one, newest first. Otherwise Scryfall's default printing of the card.
+  // A plain printing: normal frame and border, no full-art, borderless, showcase,
+  // extended-art or promo versions, and no Secret Lair-style special products.
+  const ODD_FRAMES = ['showcase', 'extendedart', 'inverted', 'etched'];
+  const ODD_SETS = ['box', 'promo', 'memorabilia', 'funny', 'token'];
+  const isNormal = c => artOf(c) && !c.full_art && !c.textless && !c.promo && !c.oversized && !c.digital &&
+    c.border_color !== 'borderless' && c.lang === 'en' && !ODD_SETS.includes(c.set_type) &&
+    !(c.frame_effects || []).some(f => ODD_FRAMES.includes(f));
+
+  // Pick the art to show: the illustration used on the most normal printings
+  // (the version people know), taken from its newest such print for the best scan.
+  // Falls back to Scryfall's default printing if there's no normal one.
   async function bestPrint(card) {
     try {
-      const q = `oracleid:${card.oracle_id} (is:full or border:borderless)`;
-      const r = await sf('/cards/search?unique=art&order=released&dir=desc&q=' + encodeURIComponent(q));
-      const prints = r.data.filter(artOf).sort((a, b) => b.full_art - a.full_art);
-      if (prints.length) return prints[0];
+      const r = await sf('/cards/search?unique=prints&order=released&dir=desc&q=' +
+        encodeURIComponent(`oracleid:${card.oracle_id} game:paper`));
+      const prints = r.data.filter(isNormal), count = {};
+      prints.forEach(c => { const k = c.illustration_id || c.id; count[k] = (count[k] || 0) + 1; });
+      let best = null;
+      prints.forEach(c => { if (!best || count[c.illustration_id || c.id] > count[best.illustration_id || best.id]) best = c; });
+      if (best) return best;
     } catch {}
     try {
       const d = await sf('/cards/named?exact=' + encodeURIComponent(card.name));
@@ -522,11 +534,27 @@
     const pl = S.players[i];
     inp.disabled = true; inp.value = 'Finding art…';
     const pr = await bestPrint(card);
-    pl.commander = {
-      name: card.name.split(' // ')[0], oracle: card.oracle_id, ci: card.color_identity || [],
-      art: artOf(pr) || '', artist: artistOf(pr), set: pr.set_name || '',
-    };
+    pl.commander = commanderFrom(card, pr);
     save(); render(); fillSheet();
+  }
+  const ART_V = 2; // bump when the art-picking rule changes, so saved commanders get re-picked
+  const commanderFrom = (card, pr) => ({
+    name: card.name.split(' // ')[0], oracle: card.oracle_id, ci: card.color_identity || [],
+    art: artOf(pr) || '', artist: artistOf(pr), set: pr.set_name || '', v: ART_V,
+  });
+  // Commanders chosen under an older rule (e.g. full-art picks) get their art re-picked.
+  async function refreshArt() {
+    for (const pl of S.players) {
+      const c = pl.commander;
+      if (!c || c.v === ART_V || !c.oracle) continue;
+      try {
+        const card = await sf('/cards/search?unique=cards&q=' + encodeURIComponent('oracleid:' + c.oracle)).then(r => r.data[0]);
+        if (!card) continue;
+        pl.commander = commanderFrom(card, await bestPrint(card));
+        save(); render();
+        if (sheet.classList.contains('open')) fillSheet();
+      } catch {}
+    }
   }
 
   // A single color to represent a player on dark UI (badges, commander-damage readout).
@@ -1168,6 +1196,7 @@
 
   build();
   keepAwake();
+  refreshArt();
 })();
 </script>
 </body>

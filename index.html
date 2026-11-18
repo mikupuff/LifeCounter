@@ -15,7 +15,8 @@
 <style>
   :root { --gap: 5px; --radius: 16px; --ink: #141414; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  /* overscroll-behavior stops the whole page rubber-banding (a "shake") when a tap drifts */
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; }
   body {
     position: fixed; inset: 0;
     font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
@@ -197,7 +198,7 @@
   }
   #sheet.open { display: flex; }
   .card {
-    width: 100%; max-width: 480px; max-height: 92%; overflow-y: auto;
+    width: 100%; max-width: 480px; max-height: 92%; overflow-y: auto; overscroll-behavior: contain;
     background: #1c1c1e; color: #f2f2f7; border-radius: 20px 20px 0 0;
     padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
     -webkit-user-select: auto; user-select: auto;
@@ -1170,6 +1171,11 @@
   ['pointerdown', 'touchend', 'click'].forEach(ev => document.addEventListener(ev, keepAwake, true));
   setInterval(keepAwake, 20000);
   document.addEventListener('gesturestart', e => e.preventDefault()); // block pinch-zoom on iOS
+  // A finger that drifts a little during a tap otherwise scrolls/bounces the whole
+  // page, which looks like the screen shaking. Only the settings card may scroll.
+  document.addEventListener('touchmove', e => {
+    if (!(e.target.closest && e.target.closest('.card'))) e.preventDefault();
+  }, { passive: false });
 
   // Re-measure whenever the board's size changes, and again after coming back
   // to the app: iOS can resume a home-screen app with a stale viewport or a
